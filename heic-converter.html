@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HEIC変換ツール</title>
+  <script>
+    function loadScript(url) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    // heic2any は最終フォールバックとして読み込むだけ（失敗しても続行）
+    window._heicLibReady = loadScript('https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js')
+      .catch(() => loadScript('https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js'))
+      .catch(() => {});
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      padding: 32px 16px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 8px;
+      font-size: 1.8rem;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #888;
+      margin-bottom: 32px;
+      font-size: 0.95rem;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    /* フォーマット選択 */
+    .format-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #fff;
+      border-radius: 12px;
+      padding: 14px 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      margin-bottom: 20px;
+    }
+
+    .format-bar label {
+      font-size: 0.9rem;
+      color: #555;
+      font-weight: 600;
+    }
+
+    .format-btn {
+      padding: 6px 18px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #555;
+      font-weight: 600;
+    }
+
+    .format-btn.active {
+      border-color: #4a90e2;
+      background: #4a90e2;
+      color: #fff;
+    }
+
+    .quality-wrap {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #666;
+    }
+
+    .quality-wrap input[type=range] {
+      width: 90px;
+      accent-color: #4a90e2;
+    }
+
+    #quality-label {
+      min-width: 32px;
+      font-weight: 600;
+      color: #4a90e2;
+    }
+
+    /* ドロップゾーン */
+    .drop-zone {
+      border: 2.5px dashed #c0cfe8;
+      border-radius: 16px;
+      background: #fff;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+      margin-bottom: 28px;
+    }
+
+    .drop-zone.dragover {
+      background: #eaf2ff;
+      border-color: #4a90e2;
+    }
+
+    .drop-zone .icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+
+    .drop-zone p {
+      color: #666;
+      font-size: 1rem;
+      margin-bottom: 6px;
+    }
+
+    .drop-zone small {
+      color: #aaa;
+      font-size: 0.82rem;
+    }
+
+    .drop-zone input[type=file] { display: none; }
+
+    .pick-btn {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 10px 28px;
+      background: #4a90e2;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .pick-btn:hover { background: #357abd; }
+
+    /* ファイルリスト */
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .file-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 14px 18px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .file-card .thumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #f0f2f5;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .file-card .thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .file-card .thumb .placeholder {
+      font-size: 1.6rem;
+    }
+
+    .file-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-name {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-status {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .file-status.converting { color: #f5a623; }
+    .file-status.done { color: #27ae60; }
+    .file-status.error { color: #e53935; }
+
+    .error-detail {
+      font-size: 0.75rem;
+      color: #e53935;
+      margin-top: 2px;
+      word-break: break-all;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #eee;
+      border-radius: 4px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+
+    .progress-inner {
+      height: 100%;
+      background: #4a90e2;
+      border-radius: 4px;
+      transition: width 0.3s;
+      width: 0%;
+    }
+
+    .progress-inner.done { background: #27ae60; }
+
+    .dl-btn {
+      padding: 7px 16px;
+      background: #27ae60;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .dl-btn:hover { background: #1e8449; }
+
+    .dl-btn:disabled {
+      background: #ccc;
+      cursor: default;
+    }
+
+    /* まとめてDL */
+    .bulk-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 20px;
+      gap: 10px;
+    }
+
+    .bulk-dl-btn {
+      padding: 10px 24px;
+      background: #4a90e2;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .bulk-dl-btn:hover { background: #357abd; }
+
+    .clear-btn {
+      padding: 10px 24px;
+      background: #fdecea;
+      color: #e53935;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .clear-btn:hover { background: #f8c9c6; }
+
+    /* ローディングスピナー */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #f5a623;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>HEIC 変換ツール</h1>
+    <p class="subtitle">HEIC / HEIF 画像を JPEG または PNG に変換します</p>
+
+    <div class="format-bar">
+      <label>変換形式:</label>
+      <button class="format-btn active" id="btn-jpeg" onclick="setFormat('jpeg')">JPEG</button>
+      <button class="format-btn" id="btn-png" onclick="setFormat('png')">PNG</button>
+
+      <div class="quality-wrap" id="quality-wrap">
+        <span>品質:</span>
+        <input type="range" id="quality" min="0.1" max="1" step="0.05" value="0.92"
+               oninput="document.getElementById('quality-label').textContent = Math.round(this.value*100)+'%'">
+        <span id="quality-label">92%</span>
+      </div>
+    </div>
+
+    <div class="drop-zone" id="drop-zone"
+         ondragover="onDragOver(event)"
+         ondragleave="onDragLeave(event)"
+         ondrop="onDrop(event)"
+         onclick="document.getElementById('file-input').click()">
+      <div class="icon">🖼️</div>
+      <p>HEIC / HEIF ファイルをここにドロップ</p>
+      <small>または</small><br>
+      <button class="pick-btn" onclick="event.stopPropagation(); document.getElementById('file-input').click()">
+        ファイルを選択
+      </button>
+      <input type="file" id="file-input" accept=".heic,.heif,image/heic,image/heif"
+             multiple onchange="onFiles(this.files)">
+    </div>
+
+    <div class="file-list" id="file-list"></div>
+
+    <div class="bulk-bar" id="bulk-bar" style="display:none;">
+      <button class="clear-btn" onclick="clearAll()">クリア</button>
+      <button class="bulk-dl-btn" id="bulk-dl-btn" onclick="downloadAll()">すべてダウンロード</button>
+    </div>
+  </div>
+
+  <script>
+    let format = 'jpeg';
+    let items = []; // { id, file, status, blob, url }
+
+    function setFormat(f) {
+      format = f;
+      document.getElementById('btn-jpeg').classList.toggle('active', f === 'jpeg');
+      document.getElementById('btn-png').classList.toggle('active', f === 'png');
+      document.getElementById('quality-wrap').style.display = f === 'jpeg' ? 'flex' : 'none';
+    }
+
+    function onDragOver(e) {
+      e.preventDefault();
+      document.getElementById('drop-zone').classList.add('dragover');
+    }
+
+    function onDragLeave(e) {
+      document.getElementById('drop-zone').classList.remove('dragover');
+    }
+
+    function onDrop(e) {
+      e.preventDefault();
+      document.getElementById('drop-zone').classList.remove('dragover');
+      const files = Array.from(e.dataTransfer.files).filter(isHeic);
+      if (files.length) onFiles(files);
+    }
+
+    function isHeic(file) {
+      return /\.(heic|heif)$/i.test(file.name) ||
+             file.type === 'image/heic' || file.type === 'image/heif';
+    }
+
+    function onFiles(fileList) {
+      const files = Array.from(fileList).filter(isHeic);
+      if (!files.length) {
+        alert('HEIC / HEIF ファイルのみ対応しています。');
+        return;
+      }
+      files.forEach(f => addItem(f));
+      document.getElementById('file-input').value = '';
+    }
+
+    function addItem(file) {
+      const id = Date.now() + Math.random();
+      items.push({ id, file, status: 'waiting', blob: null, url: null });
+      renderList();
+      convert(id);
+    }
+
+    function renderList() {
+      const list = document.getElementById('file-list');
+      list.innerHTML = items.map(item => {
+        const thumbHtml = item.url
+          ? `<img src="${item.url}" alt="">`
+          : `<span class="placeholder">📄</span>`;
+
+        let statusHtml = '';
+        let progressHtml = '';
+        let btnHtml = '';
+
+        if (item.status === 'waiting') {
+          statusHtml = '<span>待機中...</span>';
+          progressHtml = `<div class="progress-bar"><div class="progress-inner" style="width:0%"></div></div>`;
+          btnHtml = `<button class="dl-btn" disabled>DL</button>`;
+        } else if (item.status === 'converting') {
+          statusHtml = `<span class="converting"><span class="spinner"></span>変換中...</span>`;
+          progressHtml = `<div class="progress-bar"><div class="progress-inner" style="width:60%"></div></div>`;
+          btnHtml = `<button class="dl-btn" disabled>DL</button>`;
+        } else if (item.status === 'done') {
+          const sizekb = item.blob ? (item.blob.size / 1024).toFixed(1) : '';
+          statusHtml = `<span class="done">完了 — ${sizekb} KB</span>`;
+          progressHtml = `<div class="progress-bar"><div class="progress-inner done" style="width:100%"></div></div>`;
+          btnHtml = `<button class="dl-btn" onclick="downloadOne('${item.id}')">DL</button>`;
+        } else if (item.status === 'error') {
+          statusHtml = `<span class="error">変換エラー</span>`;
+          const errDetail = item.errorMsg ? `<div class="error-detail">${escHtml(item.errorMsg)}</div>` : '';
+          progressHtml = `<div class="progress-bar"><div class="progress-inner" style="width:100%;background:#e53935"></div></div>${errDetail}`;
+          btnHtml = `<button class="dl-btn" style="background:#f5a623" onclick="retryOne('${item.id}')">再試行</button>`;
+        }
+
+        return `
+          <div class="file-card" data-id="${item.id}">
+            <div class="thumb">${thumbHtml}</div>
+            <div class="file-info">
+              <div class="file-name">${escHtml(item.file.name)}</div>
+              <div class="file-status">${statusHtml}</div>
+              ${progressHtml}
+            </div>
+            ${btnHtml}
+          </div>
+        `;
+      }).join('');
+
+      const hasDone = items.some(i => i.status === 'done');
+      document.getElementById('bulk-bar').style.display = items.length ? 'flex' : 'none';
+      document.getElementById('bulk-dl-btn').disabled = !hasDone;
+    }
+
+    // ── 変換戦略 1: ネイティブ <img> + Canvas (Safari / iOS) ──
+    function tryNative(file, mimeType, quality) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), mimeType, quality);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('native load failed')); };
+        img.src = url;
+      });
+    }
+
+    // ── 変換戦略 2: ImageDecoder API (Chrome on Windows 11 / macOS) ──
+    async function tryImageDecoder(file, mimeType, quality) {
+      if (!('ImageDecoder' in window)) throw new Error('no ImageDecoder');
+      const supported = await ImageDecoder.isTypeSupported('image/heic');
+      if (!supported) throw new Error('HEIC not supported by ImageDecoder');
+
+      const buffer = await file.arrayBuffer();
+      const decoder = new ImageDecoder({ data: buffer, type: 'image/heic' });
+      const { image } = await decoder.decode({ frameIndex: 0 });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = image.displayWidth;
+      canvas.height = image.displayHeight;
+      canvas.getContext('2d').drawImage(image, 0, 0);
+      image.close();
+      decoder.close();
+
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), mimeType, quality);
+      });
+    }
+
+    // ── 変換戦略 3: libheif-js WASM (Chrome Windows 対応) ──
+    async function tryLibheifJs(file, mimeType, quality) {
+      if (!window._libheifModule) {
+        if (!window._libheifScriptLoaded) {
+          await loadScript('https://cdn.jsdelivr.net/npm/libheif-js@1.19.8/libheif-wasm/libheif-bundle.js')
+            .catch(() => loadScript('https://unpkg.com/libheif-js@1.19.8/libheif-wasm/libheif-bundle.js'));
+          window._libheifScriptLoaded = true;
+        }
+        if (typeof libheif === 'undefined') throw new Error('libheif script not loaded');
+        // libheif は Emscripten ファクトリ関数 — 呼び出して初期化する
+        window._libheifModule = (typeof libheif === 'function') ? await libheif() : libheif;
+      }
+
+      const mod = window._libheifModule;
+      if (!mod || !mod.HeifDecoder) throw new Error('HeifDecoder not available in module');
+
+      const buffer = await file.arrayBuffer();
+      const decoder = new mod.HeifDecoder();
+      const images = decoder.decode(new Uint8Array(buffer));
+      if (!images || images.length === 0) throw new Error('No images decoded');
+
+      const image = images[0];
+      const width = image.get_width();
+      const height = image.get_height();
+      const imageData = new ImageData(width, height);
+
+      return new Promise((resolve, reject) => {
+        image.display(imageData, (result) => {
+          if (!result) { reject(new Error('display() returned null')); return; }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d').putImageData(result, 0, 0);
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), mimeType, quality);
+        });
+      });
+    }
+
+    // ── 変換戦略 4: heic2any (古い HEIC 形式のフォールバック) ──
+    async function tryHeic2any(file, mimeType, quality) {
+      await window._heicLibReady;
+      if (typeof heic2any === 'undefined') throw new Error('heic2any not loaded');
+      const inputBlob = new Blob([await file.arrayBuffer()], { type: 'image/heic' });
+      const result = await heic2any({
+        blob: inputBlob,
+        toType: mimeType,
+        quality: mimeType === 'image/jpeg' ? quality : undefined,
+        multiple: false,
+      });
+      return Array.isArray(result) ? result[0] : result;
+    }
+
+    async function convert(id) {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      item.status = 'converting';
+      item.errorMsg = null;
+      renderList();
+
+      const quality = parseFloat(document.getElementById('quality').value);
+      const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+      const strategies = [
+        { name: 'Native',        fn: () => tryNative(item.file, mimeType, quality) },
+        { name: 'ImageDecoder',  fn: () => tryImageDecoder(item.file, mimeType, quality) },
+        { name: 'libheif-js',    fn: () => tryLibheifJs(item.file, mimeType, quality) },
+        { name: 'heic2any',      fn: () => tryHeic2any(item.file, mimeType, quality) },
+      ];
+
+      let lastErr = null;
+      for (const s of strategies) {
+        try {
+          const blob = await s.fn();
+          item.blob = blob;
+          item.url = URL.createObjectURL(blob);
+          item.status = 'done';
+          console.log(`変換成功 [${s.name}]`);
+          renderList();
+          return;
+        } catch (e) {
+          console.log(`[${s.name}] 失敗:`, e.message);
+          lastErr = e;
+        }
+      }
+
+      // 全戦略失敗
+      item.status = 'error';
+      item.errorMsg = 'すべての変換方法が失敗しました。Safari またはオンラインツールをお試しください。';
+      renderList();
+    }
+
+    function retryOne(id) {
+      const item = items.find(i => String(i.id) === String(id));
+      if (!item) return;
+      convert(item.id);
+    }
+
+    function downloadOne(id) {
+      const item = items.find(i => String(i.id) === String(id));
+      if (!item || !item.blob) return;
+      const ext = format === 'jpeg' ? 'jpg' : 'png';
+      const name = item.file.name.replace(/\.(heic|heif)$/i, '') + '.' + ext;
+      triggerDownload(item.url, name);
+    }
+
+    async function downloadAll() {
+      const done = items.filter(i => i.status === 'done');
+      if (!done.length) return;
+
+      if (done.length === 1) {
+        downloadOne(String(done[0].id));
+        return;
+      }
+
+      // 複数ファイルはJSZipがなければ順次ダウンロード
+      for (const item of done) {
+        const ext = format === 'jpeg' ? 'jpg' : 'png';
+        const name = item.file.name.replace(/\.(heic|heif)$/i, '') + '.' + ext;
+        triggerDownload(item.url, name);
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+
+    function triggerDownload(url, name) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+    }
+
+    function clearAll() {
+      items.forEach(i => { if (i.url) URL.revokeObjectURL(i.url); });
+      items = [];
+      renderList();
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+  </script>
+</body>
+</html>
